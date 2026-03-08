@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "910818151686",
+    "project_id": "formulandapp",
+    "storage_bucket": "formulandapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:910818151686:android:c083730f3ec7ac6a95a287",
+        "android_client_info": {
+          "package_name": "com.example.formulandapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDK_iNKBGgB3CX3HOqSf4CZd6iJY1xZ-Nw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
