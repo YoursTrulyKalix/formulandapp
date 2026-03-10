@@ -1,1 +1,27 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"formulandapp","appId":"1:910818151686:android:c083730f3ec7ac6a95a287","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"formulandapp","configurations":{"android":"1:910818151686:android:c083730f3ec7ac6a95a287","web":"1:910818151686:web:df6386d0388de2c595a287","windows":"1:910818151686:web:6a53c3981bdac46795a287"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "formulandapp",
+          "appId": "1:910818151686:android:c083730f3ec7ac6a95a287",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "formulandapp",
+          "configurations": {
+            "android": "1:910818151686:android:c083730f3ec7ac6a95a287",
+            "web": "1:910818151686:web:df6386d0388de2c595a287",
+            "windows": "1:910818151686:web:6a53c3981bdac46795a287"
+          }
+        }
+      }
+    }
+  }
+}
