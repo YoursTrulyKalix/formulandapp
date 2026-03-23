@@ -9,10 +9,168 @@ import 'package:formulandsocialapp/core/services/creation_service.dart';
 import 'package:formulandsocialapp/features/creations/create_modal.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SORT OPTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+enum _SortOption { newest, oldest, mostVoted, mostUsed }
+
+extension _SortOptionLabel on _SortOption {
+  String get label => switch (this) {
+    _SortOption.newest   => 'Newest',
+    _SortOption.oldest   => 'Oldest',
+    _SortOption.mostVoted => 'Most Voted',
+    _SortOption.mostUsed  => 'Most Used',
+  };
+  IconData get icon => switch (this) {
+    _SortOption.newest   => Icons.arrow_downward_rounded,
+    _SortOption.oldest   => Icons.arrow_upward_rounded,
+    _SortOption.mostVoted => Icons.how_to_vote_rounded,
+    _SortOption.mostUsed  => Icons.local_fire_department_rounded,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CREATIONS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-class CreationsScreen extends StatelessWidget {
+class CreationsScreen extends StatefulWidget {
   const CreationsScreen({super.key});
+
+  @override
+  State<CreationsScreen> createState() => _CreationsScreenState();
+}
+
+class _CreationsScreenState extends State<CreationsScreen> {
+  final _searchCtrl = TextEditingController();
+  _SortOption _sort = _SortOption.newest;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    _searchCtrl.removeListener(_onSearchChanged);
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<CreationModel> _filtered(List<CreationModel> all) {
+    // 1. Filter by search query
+    final q = _searchCtrl.text.toLowerCase().trim();
+    var list = q.isEmpty
+        ? all
+        : all.where((c) =>
+            c.title.toLowerCase().contains(q) ||
+            c.content.toLowerCase().contains(q) ||
+            c.type.toLowerCase().contains(q)).toList();
+
+    // 2. Sort
+    list = List.of(list); // make mutable copy
+    switch (_sort) {
+      case _SortOption.newest:
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      case _SortOption.oldest:
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      case _SortOption.mostVoted:
+        list.sort((a, b) => b.totalVotes.compareTo(a.totalVotes));
+      case _SortOption.mostUsed:
+        // itemCount for collections, totalVotes for predictions,
+        // content.length as engagement proxy for notes/journals
+        list.sort((a, b) => _usageScore(b).compareTo(_usageScore(a)));
+    }
+    return list;
+  }
+
+  int _usageScore(CreationModel c) => switch (c.type) {
+    'collection' => (c.metadata['itemCount'] as int?) ?? 0,
+    'prediction' => c.totalVotes,
+    _            => c.content.length,
+  };
+
+  // ── Search bar + sort chips — extracted so they never live inside StreamBuilder
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _searchCtrl,
+            style: const TextStyle(color: AppStyles.textMain, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Search by title or keyword…',
+              hintStyle: const TextStyle(color: AppStyles.textMuted, fontSize: 13),
+              prefixIcon: const Icon(Icons.search_rounded, color: AppStyles.textMuted, size: 18),
+              suffixIcon: _searchCtrl.text.isNotEmpty
+                  ? GestureDetector(
+                      onTap: () => _searchCtrl.clear(),
+                      child: const Icon(Icons.close_rounded, color: AppStyles.textMuted, size: 16),
+                    )
+                  : null,
+              filled: true,
+              fillColor: AppStyles.surface,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppStyles.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppStyles.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppStyles.accentRed),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _SortOption.values.map((opt) {
+                final active = _sort == opt;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _sort = opt),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: active ? AppStyles.accentRed : AppStyles.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: active ? AppStyles.accentRed : AppStyles.borderColor,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(opt.icon, size: 12,
+                              color: active ? Colors.white : AppStyles.textMuted),
+                          const SizedBox(width: 5),
+                          Text(opt.label,
+                              style: TextStyle(
+                                color: active ? Colors.white : AppStyles.textMuted,
+                                fontSize: 12,
+                                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                              )),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,109 +180,133 @@ class CreationsScreen extends StatelessWidget {
         children: [
           CustomPaint(size: Size.infinite, painter: TrackBackgroundPainter()),
           SafeArea(
-            child: StreamBuilder<List<CreationModel>>(
-              stream: CreationService.instance.myCreationsStream(),
-              builder: (context, snapshot) {
-                final creations = snapshot.data ?? [];
-                final isLoading = snapshot.connectionState == ConnectionState.waiting;
-
-                return CustomScrollView(
-                  slivers: [
-                    // Header
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('FORMULAND', style: AppStyles.label),
-                              const SizedBox(height: 4),
-                              Text('Garage', style: AppStyles.headingXL),
-                            ]),
-                            const Spacer(),
-                            GestureDetector(
-                              onTap: () => showCreateModal(context),
-                              child: Container(
-                                width: 40, height: 40,
-                                decoration: BoxDecoration(
-                                  color: AppStyles.accentRed,
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [BoxShadow(color: AppStyles.accentRed.withOpacity(0.4),
-                                      blurRadius: 12, offset: const Offset(0, 4))],
-                                ),
-                                child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    if (isLoading)
-                      const SliverFillRemaining(
-                        child: Center(child: CircularProgressIndicator(color: AppStyles.accentRed, strokeWidth: 2)),
-                      ),
-
-                    if (!isLoading && creations.isEmpty)
-                      SliverFillRemaining(child: _EmptyState()),
-
-                    if (!isLoading && creations.isNotEmpty) ...[
-                      // Stats row
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                          child: Row(children: [
-                            Text('${creations.length} creation${creations.length == 1 ? '' : 's'}',
-                                style: const TextStyle(color: AppStyles.textMuted, fontSize: 12)),
-                            const SizedBox(width: 10),
-                            Builder(builder: (_) {
-                              final n = creations.where((c) => c.isPublic).length;
-                              if (n == 0) return const SizedBox.shrink();
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppStyles.accentRed.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: AppStyles.accentRed.withOpacity(0.3)),
-                                ),
-                                child: Row(children: [
-                                  const Icon(Icons.public_rounded, color: AppStyles.accentRed, size: 10),
-                                  const SizedBox(width: 4),
-                                  Text('$n public', style: const TextStyle(
-                                      color: AppStyles.accentRed, fontSize: 10, fontWeight: FontWeight.w700)),
-                                ]),
-                              );
-                            }),
-                          ]),
-                        ),
-                      ),
-
-                      // Grid
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 0.78,
+            // Column keeps header + search bar OUTSIDE the StreamBuilder.
+            // Only the list content below rebuilds when the stream emits.
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header ─────────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('FORMULAND', style: AppStyles.label),
+                        const SizedBox(height: 4),
+                        Text('Garage', style: AppStyles.headingXL),
+                      ]),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => showCreateModal(context),
+                        child: Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(
+                            color: AppStyles.accentRed,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [BoxShadow(color: AppStyles.accentRed.withOpacity(0.4),
+                                blurRadius: 12, offset: const Offset(0, 4))],
                           ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, i) => _CreationCard(
-                              creation: creations[i],
-                              onTap: () => Navigator.push(context,
-                                MaterialPageRoute(builder: (_) =>
-                                    CreationDetailScreen(creation: creations[i]))),
-                            ),
-                            childCount: creations.length,
-                          ),
+                          child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
                         ),
                       ),
                     ],
-                  ],
-                );
-              },
+                  ),
+                ),
+
+                // ── Search + sort (stable — never rebuilds on stream/setState) ──
+                _buildSearchBar(),
+
+                // ── Stream content ──────────────────────────────────────────
+                Expanded(
+                  child: StreamBuilder<List<CreationModel>>(
+                    stream: CreationService.instance.myCreationsStream(),
+                    builder: (context, snapshot) {
+                      final allCreations = snapshot.data ?? [];
+                      final isLoading = snapshot.connectionState == ConnectionState.waiting;
+                      final creations = _filtered(allCreations);
+
+                      if (isLoading) {
+                        return const Center(
+                          child: CircularProgressIndicator(color: AppStyles.accentRed, strokeWidth: 2),
+                        );
+                      }
+
+                      if (allCreations.isEmpty) return _EmptyState();
+
+                      return CustomScrollView(
+                        slivers: [
+                          // Stats row
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                              child: Row(children: [
+                                Text(
+                                  _searchCtrl.text.isNotEmpty
+                                      ? '${creations.length} of ${allCreations.length} creation${allCreations.length == 1 ? '' : 's'}'
+                                      : '${allCreations.length} creation${allCreations.length == 1 ? '' : 's'}',
+                                  style: const TextStyle(color: AppStyles.textMuted, fontSize: 12),
+                                ),
+                                const SizedBox(width: 10),
+                                Builder(builder: (_) {
+                                  final n = allCreations.where((c) => c.isPublic).length;
+                                  if (n == 0) return const SizedBox.shrink();
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppStyles.accentRed.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppStyles.accentRed.withOpacity(0.3)),
+                                    ),
+                                    child: Row(children: [
+                                      const Icon(Icons.public_rounded, color: AppStyles.accentRed, size: 10),
+                                      const SizedBox(width: 4),
+                                      Text('$n public', style: const TextStyle(
+                                          color: AppStyles.accentRed, fontSize: 10, fontWeight: FontWeight.w700)),
+                                    ]),
+                                  );
+                                }),
+                              ]),
+                            ),
+                          ),
+
+                          // No results
+                          if (creations.isEmpty && _searchCtrl.text.isNotEmpty)
+                            SliverFillRemaining(
+                              child: _NoSearchResults(
+                                query: _searchCtrl.text,
+                                onClear: () => _searchCtrl.clear(),
+                              ),
+                            ),
+
+                          // Grid
+                          if (creations.isNotEmpty)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                              sliver: SliverGrid(
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.78,
+                                ),
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, i) => _CreationCard(
+                                    creation: creations[i],
+                                    onTap: () => Navigator.push(context,
+                                      MaterialPageRoute(builder: (_) =>
+                                          CreationDetailScreen(creation: creations[i]))),
+                                  ),
+                                  childCount: creations.length,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -170,6 +352,56 @@ class _EmptyState extends StatelessWidget {
                 ),
                 child: const Text('Start Creating',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NO SEARCH RESULTS
+// ─────────────────────────────────────────────────────────────────────────────
+class _NoSearchResults extends StatelessWidget {
+  final String query;
+  final VoidCallback onClear;
+  const _NoSearchResults({required this.query, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(color: AppStyles.surface, shape: BoxShape.circle,
+                  border: Border.all(color: AppStyles.borderColor)),
+              child: const Center(child: Icon(Icons.search_off_rounded, color: AppStyles.textMuted, size: 28)),
+            ),
+            const SizedBox(height: 16),
+            Text('No results for "$query"',
+                style: const TextStyle(color: AppStyles.textMain, fontWeight: FontWeight.w800, fontSize: 16),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            const Text('Try a different title or keyword.',
+                style: AppStyles.bodyText, textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: onClear,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppStyles.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppStyles.borderColor),
+                ),
+                child: const Text('Clear search',
+                    style: TextStyle(color: AppStyles.textSub, fontWeight: FontWeight.w700, fontSize: 13)),
               ),
             ),
           ],
