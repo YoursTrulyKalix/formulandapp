@@ -419,8 +419,11 @@ class _CreationCard extends StatelessWidget {
   final VoidCallback onTap;
   const _CreationCard({required this.creation, required this.onTap});
 
-  Color get _color => _typeColor(creation.type);
-  String get _emoji => _typeEmoji(creation.type);
+  // Respect user customisation; fall back to type default
+  Color get _color => creation.accentColor != null
+      ? Color(creation.accentColor!)
+      : _typeColor(creation.type);
+  String get _emoji => creation.coverEmoji ?? _typeEmoji(creation.type);
   String get _label => _typeLabel(creation.type);
 
   static Color _typeColor(String t) => switch (t) {
@@ -606,14 +609,17 @@ class _CreationDetailScreenState extends State<CreationDetailScreen> {
     _c = widget.creation;
   }
 
-  Color get _color => switch (_c.type) {
-    'journal'    => const Color(0xFF3671C6),
-    'prediction' => const Color(0xFFFF8000),
-    'collection' => const Color(0xFF229971),
-    _            => AppStyles.accentRed,
-  };
+  // Respect user customisation; fall back to type default
+  Color get _color => _c.accentColor != null
+      ? Color(_c.accentColor!)
+      : switch (_c.type) {
+          'journal'    => const Color(0xFF3671C6),
+          'prediction' => const Color(0xFFFF8000),
+          'collection' => const Color(0xFF229971),
+          _            => AppStyles.accentRed,
+        };
 
-  String get _emoji => switch (_c.type) {
+  String get _emoji => _c.coverEmoji ?? switch (_c.type) {
     'journal'    => '📓',
     'prediction' => '🔮',
     'collection' => '📁',

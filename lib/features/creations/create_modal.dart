@@ -138,6 +138,8 @@ class _CreateFormSheet extends StatefulWidget {
 class _CreateFormSheetState extends State<_CreateFormSheet> {
   bool _isPublic = false;
   bool _saving = false;
+  int? _selectedColor;   // null = use type default
+  String? _selectedEmoji; // null = use type default
 
   // ── Shared
   final _titleCtrl = TextEditingController();
@@ -244,6 +246,8 @@ class _CreateFormSheetState extends State<_CreateFormSheet> {
         metadata: metadata,
         isPublic: _isPublic,
         pollOptions: pollOptions,
+        accentColor: _selectedColor,
+        coverEmoji: _selectedEmoji,
       );
 
       if (mounted) {
@@ -305,7 +309,17 @@ class _CreateFormSheetState extends State<_CreateFormSheet> {
                 color: widget.color,
                 onChanged: (v) => setState(() => _isPublic = v),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
+
+              // ── Visual customisation ────────────────────────────────────
+              _VisualsSection(
+                type: widget.type,
+                selectedColor: _selectedColor,
+                selectedEmoji: _selectedEmoji,
+                onColorSelected: (c) => setState(() => _selectedColor = c),
+                onEmojiSelected: (e) => setState(() => _selectedEmoji = e),
+              ),
+              const SizedBox(height: 14),
 
               // Title
               _field(_titleCtrl, 'Title', maxLines: 1),
@@ -710,6 +724,171 @@ class _PublicToggle extends StatelessWidget {
             ),
           ),
         ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VISUALS SECTION — colour theme + emoji picker
+// ─────────────────────────────────────────────────────────────────────────────
+class _VisualsSection extends StatelessWidget {
+  final String type;
+  final int? selectedColor;
+  final String? selectedEmoji;
+  final ValueChanged<int?> onColorSelected;   // null = reset to type default
+  final ValueChanged<String?> onEmojiSelected; // null = reset to type default
+
+  const _VisualsSection({
+    required this.type,
+    required this.selectedColor,
+    required this.selectedEmoji,
+    required this.onColorSelected,
+    required this.onEmojiSelected,
+  });
+
+  // 8 theme colours + a "reset" slot
+  static const _colors = [
+    0xFFE10600, // F1 red (default for notes)
+    0xFF3671C6, // F1 blue (default for journals)
+    0xFFFF8000, // F1 orange (default for predictions)
+    0xFF229971, // green (default for collections)
+    0xFFFFD700, // gold
+    0xFFB44FD4, // purple
+    0xFF00BCD4, // teal
+    0xFFFF4081, // pink
+  ];
+
+  // Emoji sets per type — 12 options each
+  static const _emojisByType = <String, List<String>>{
+    'note': ['📝', '✍️', '💡', '🧠', '📌', '🗒️', '💭', '🔖', '📎', '⚡', '🎯', '🔥'],
+    'journal': ['📓', '📔', '🏁', '🏎️', '🏆', '⛽', '🔧', '🛞', '🏟️', '🎽', '🥇', '📅'],
+    'prediction': ['🔮', '🎯', '🃏', '🎲', '⚡', '🏆', '🌟', '📊', '🔭', '💫', '🎱', '🧿'],
+    'collection': ['📁', '📂', '🗂️', '🎞️', '📸', '🏅', '⭐', '💎', '🎬', '📚', '🗃️', '✨'],
+  };
+
+  List<String> get _emojis => _emojisByType[type] ?? _emojisByType['note']!;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppStyles.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppStyles.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          const Row(children: [
+            Text('🎨', style: TextStyle(fontSize: 14)),
+            SizedBox(width: 6),
+            Text('PERSONALISE', style: TextStyle(
+              color: AppStyles.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            )),
+          ]),
+          const SizedBox(height: 12),
+
+          // ── Colour row ────────────────────────────────────────────────
+          const Text('Colour', style: TextStyle(
+            color: AppStyles.textSub, fontSize: 11, fontWeight: FontWeight.w600,
+          )),
+          const SizedBox(height: 8),
+          Row(children: [
+            // Colour swatches
+            ..._colors.map((c) {
+              final isSelected = selectedColor == c;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  onTap: () => onColorSelected(isSelected ? null : c),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 28, height: 28,
+                    decoration: BoxDecoration(
+                      color: Color(c),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? Colors.white : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: isSelected
+                          ? [BoxShadow(color: Color(c).withOpacity(0.6), blurRadius: 8)]
+                          : null,
+                    ),
+                    child: isSelected
+                        ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                        : null,
+                  ),
+                ),
+              );
+            }),
+          ]),
+
+          const SizedBox(height: 14),
+
+          // ── Emoji row ─────────────────────────────────────────────────
+          const Text('Icon', style: TextStyle(
+            color: AppStyles.textSub, fontSize: 11, fontWeight: FontWeight.w600,
+          )),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _emojis.map((e) {
+              final isSelected = selectedEmoji == e;
+              return GestureDetector(
+                onTap: () => onEmojiSelected(isSelected ? null : e),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? (selectedColor != null
+                            ? Color(selectedColor!).withOpacity(0.2)
+                            : AppStyles.accentRed.withOpacity(0.15))
+                        : AppStyles.background,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected
+                          ? (selectedColor != null
+                              ? Color(selectedColor!).withOpacity(0.6)
+                              : AppStyles.accentRed.withOpacity(0.6))
+                          : AppStyles.borderColor,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(e, style: const TextStyle(fontSize: 20)),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          // Reset hint — only shown when something is customised
+          if (selectedColor != null || selectedEmoji != null) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () {
+                onColorSelected(null);
+                onEmojiSelected(null);
+              },
+              child: const Text(
+                'Reset to defaults',
+                style: TextStyle(
+                  color: AppStyles.textMuted,
+                  fontSize: 11,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

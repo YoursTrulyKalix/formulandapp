@@ -26,6 +26,8 @@ class CreationService {
     Map<String, dynamic> metadata = const {},
     bool isPublic = false,
     List<Map<String, dynamic>> pollOptions = const [],
+    int? accentColor,
+    String? coverEmoji,
   }) async {
     final userDoc = await _db.collection('users').doc(_uid).get();
     final userData = userDoc.data()!;
@@ -46,6 +48,8 @@ class CreationService {
       createdAt: DateTime.now(),
       pollOptions: pollOptions,
       pollVoterIds: [],
+      accentColor: accentColor,
+      coverEmoji: coverEmoji,
     );
 
     final batch = _db.batch();
@@ -119,6 +123,26 @@ class CreationService {
         .limit(limit)
         .snapshots()
         .map((s) => s.docs.map(CreationModel.fromFirestore).toList());
+  }
+
+  // ── Update visual customisation ────────────────────────────────────────────
+  /// Patches only the visual fields (accentColor, coverEmoji) without touching
+  /// anything else. Writes to both private + public docs if the creation is public.
+  Future<void> updateVisuals(
+    CreationModel creation, {
+    int? accentColor,
+    String? coverEmoji,
+  }) async {
+    final data = <String, dynamic>{
+      'accentColor': accentColor,
+      'coverEmoji': coverEmoji,
+    };
+    final batch = _db.batch();
+    batch.update(_private(creation.authorId).doc(creation.id), data);
+    if (creation.isPublic) {
+      batch.update(_public.doc(creation.id), data);
+    }
+    await batch.commit();
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────────

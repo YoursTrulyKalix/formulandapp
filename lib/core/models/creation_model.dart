@@ -22,6 +22,14 @@ class CreationModel {
   final List<Map<String, dynamic>> pollOptions; // [{label, votes}]
   final List<String> pollVoterIds;              // uids who already voted
 
+  // ── Visual customisation ───────────────────────────────────────────────────
+  // Stored as 0xAARRGGBB int so Firestore can hold it as a plain number.
+  // null → fall back to the per-type default colour in the UI.
+  final int? accentColor;
+  // Any single emoji the user picks (e.g. "🏎️").
+  // null → fall back to the per-type default emoji in the UI.
+  final String? coverEmoji;
+
   const CreationModel({
     required this.id,
     required this.authorId,
@@ -37,6 +45,8 @@ class CreationModel {
     required this.createdAt,
     this.pollOptions = const [],
     this.pollVoterIds = const [],
+    this.accentColor,
+    this.coverEmoji,
   });
 
   factory CreationModel.fromFirestore(DocumentSnapshot doc) {
@@ -58,6 +68,8 @@ class CreationModel {
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList(),
       pollVoterIds: List<String>.from(d['pollVoterIds'] ?? []),
+      accentColor: d['accentColor'] as int?,
+      coverEmoji: d['coverEmoji'] as String?,
     );
   }
 
@@ -75,18 +87,38 @@ class CreationModel {
         'createdAt': Timestamp.fromDate(createdAt),
         'pollOptions': pollOptions,
         'pollVoterIds': pollVoterIds,
+        'accentColor': accentColor,
+        'coverEmoji': coverEmoji,
       };
 
-  CreationModel copyWith({bool? isPublic, List<Map<String, dynamic>>? pollOptions, List<String>? pollVoterIds}) =>
+  CreationModel copyWith({
+    bool? isPublic,
+    List<Map<String, dynamic>>? pollOptions,
+    List<String>? pollVoterIds,
+    int? accentColor,
+    String? coverEmoji,
+    bool clearAccentColor = false,
+    bool clearCoverEmoji = false,
+  }) =>
       CreationModel(
-        id: id, authorId: authorId, authorUsername: authorUsername,
-        authorHandle: authorHandle, authorAvatarUrl: authorAvatarUrl,
-        type: type, title: title, content: content, mediaUrl: mediaUrl,
-        metadata: metadata, createdAt: createdAt,
+        id: id,
+        authorId: authorId,
+        authorUsername: authorUsername,
+        authorHandle: authorHandle,
+        authorAvatarUrl: authorAvatarUrl,
+        type: type,
+        title: title,
+        content: content,
+        mediaUrl: mediaUrl,
+        metadata: metadata,
+        createdAt: createdAt,
         isPublic: isPublic ?? this.isPublic,
         pollOptions: pollOptions ?? this.pollOptions,
         pollVoterIds: pollVoterIds ?? this.pollVoterIds,
+        accentColor: clearAccentColor ? null : (accentColor ?? this.accentColor),
+        coverEmoji: clearCoverEmoji ? null : (coverEmoji ?? this.coverEmoji),
       );
 
-  int get totalVotes => pollOptions.fold(0, (sum, o) => sum + ((o['votes'] as int?) ?? 0));
+  int get totalVotes =>
+      pollOptions.fold(0, (sum, o) => sum + ((o['votes'] as int?) ?? 0));
 }
