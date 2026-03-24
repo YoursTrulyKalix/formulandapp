@@ -16,6 +16,8 @@ class AuthService {
 
   User? get currentFirebaseUser => _auth.currentUser;
 
+  FirebaseFirestore get firestoreDb => _db;
+
   // ── Sign Up ────────────────────────────────────────────────────────────────
   Future<UserModel> signUpWithEmail({
     required String email,
