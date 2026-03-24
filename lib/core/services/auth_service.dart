@@ -46,8 +46,12 @@ class AuthService {
       createdAt: DateTime.now(),
     );
 
-    // Write to Firestore
-    await _db.collection('users').doc(uid).set(newUser.toMap());
+    // Write to Firestore — kasama ang usernameLower para gumana ang user search
+    // (ginagamit sa NewConversationScreen para ma-search ang users by name)
+    await _db.collection('users').doc(uid).set({
+      ...newUser.toMap(),
+      'usernameLower': username.toLowerCase(),
+    });
 
     return newUser;
   }
@@ -95,7 +99,11 @@ class AuthService {
         creationsCount: 0,
         createdAt: DateTime.now(),
       );
-      await _db.collection('users').doc(uid).set(newUser.toMap());
+      // Write to Firestore — kasama ang usernameLower para gumana ang user search
+      await _db.collection('users').doc(uid).set({
+        ...newUser.toMap(),
+        'usernameLower': newUser.username.toLowerCase(),
+      });
       return newUser;
     }
 

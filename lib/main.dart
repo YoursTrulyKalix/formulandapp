@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:formulandsocialapp/core/app_styles.dart';
 import 'package:formulandsocialapp/features/auth/login_screen.dart';
 import 'package:formulandsocialapp/features/feed/feed_screen.dart';
@@ -14,8 +15,8 @@ import 'package:formulandsocialapp/firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
-  options: DefaultFirebaseOptions.currentPlatform,
-);
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -125,6 +126,28 @@ class _MainNavigationState extends State<MainNavigation> {
     const ProfileScreen(),
   ];
 
+  // Kinukuha ang bilang ng unread conversations para sa badge sa Messages tab.
+  // Gumagamit ng StreamBuilder para real-time — awtomatikong mag-a-update
+  // kapag may bagong mensahe na dumating kahit nasa ibang tab ka.
+  Stream<int> get _unreadCountStream {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    return FirebaseFirestore.instance
+        .collection('conversations')
+        .where('participantIds', arrayContains: uid)
+        .snapshots()
+        .map((snap) {
+      // Bilangin kung ilan ang conversations na:
+      // 1. Hindi ikaw ang nagpadala ng last message
+      // 2. May laman ang last message (hindi empty)
+      return snap.docs.where((doc) {
+        final data = doc.data();
+        final lastSenderId = data['lastSenderId'] ?? '';
+        final lastMessage = data['lastMessage'] ?? '';
+        return lastSenderId != uid && lastMessage.isNotEmpty;
+      }).length;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -149,55 +172,117 @@ class _MainNavigationState extends State<MainNavigation> {
               borderRadius: BorderRadius.circular(34),
               border: Border.all(color: AppStyles.borderColor, width: 1),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(4, (i) {
-                final icons = [
-                  Icons.auto_awesome_mosaic_rounded,
-                  Icons.grid_view_rounded,
-                  Icons.chat_bubble_rounded,
-                  Icons.person_rounded,
-                ];
-                final isSelected = _idx == i;
-                return GestureDetector(
-                  onTap: () => setState(() => _idx = i),
-                  behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
-                    width: 64,
-                    height: 68,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppStyles.accentRed.withOpacity(0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            icons[i],
-                            color: isSelected ? AppStyles.accentRed : AppStyles.textMuted,
-                            size: 22,
-                          ),
-                        ),
-                        if (isSelected)
-                          Container(
-                            width: 4,
-                            height: 4,
-                            margin: const EdgeInsets.only(top: 3),
-                            decoration: const BoxDecoration(
-                              color: AppStyles.accentRed,
-                              shape: BoxShape.circle,
+            // StreamBuilder para ma-listen sa unread count in real-time
+            // — kapag may bagong mensahe, mag-a-update agad ang badge
+            child: StreamBuilder<int>(
+              stream: _unreadCountStream,
+              builder: (context, snapshot) {
+                // Ang bilang ng unread — 0 kung walang data pa
+                final unreadCount = snapshot.data ?? 0;
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: List.generate(4, (i) {
+                    final icons = [
+                      Icons.auto_awesome_mosaic_rounded,
+                      Icons.grid_view_rounded,
+                      Icons.chat_bubble_rounded,
+                      Icons.person_rounded,
+                    ];
+                    final isSelected = _idx == i;
+
+                    // Ang Messages tab ay index 2 — doon lang natin
+                    // ilalagay ang unread badge
+                    final isMessagesTab = i == 2;
+                    final showBadge = isMessagesTab && unreadCount > 0;
+
+                    return GestureDetector(
+                      onTap: () => setState(() => _idx = i),
+                      behavior: HitTestBehavior.opaque,
+                      child: SizedBox(
+                        width: 64,
+                        height: 68,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Stack para malagyan ng badge ang icon
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? AppStyles.accentRed.withOpacity(0.15)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Icon(
+                                    icons[i],
+                                    color: isSelected
+                                        ? AppStyles.accentRed
+                                        : AppStyles.textMuted,
+                                    size: 22,
+                                  ),
+                                ),
+                                // Red badge na nagpapakita ng bilang ng unread messages
+                                // Ipinapakita lang kapag may unread at nasa Messages tab
+                                if (showBadge)
+                                  Positioned(
+                                    top: 2,
+                                    right: 6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: AppStyles.accentRed,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppStyles.surface,
+                                          width: 1.2,
+                                        ),
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 16,
+                                        minHeight: 14,
+                                      ),
+                                      child: Text(
+                                        // Kapag higit sa 9, ipakita "9+" para hindi masyadong malaki
+                                        unreadCount > 9
+                                            ? '9+'
+                                            : '$unreadCount',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          height: 1.2,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
+                            // Dot indicator sa ibaba kapag selected ang tab
+                            if (isSelected)
+                              Container(
+                                width: 4,
+                                height: 4,
+                                margin: const EdgeInsets.only(top: 3),
+                                decoration: const BoxDecoration(
+                                  color: AppStyles.accentRed,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
                 );
-              }),
+              },
             ),
           ),
         ),
