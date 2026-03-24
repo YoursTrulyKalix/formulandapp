@@ -3,36 +3,36 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:formulandsocialapp/core/models/post_model.dart';
+import 'package:formulandsocialapp/core/services/notification_service.dart';
 
 class PostService {
   static final PostService instance = PostService._internal();
   PostService._internal();
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
 
   String get _uid => _auth.currentUser!.uid;
 
   // ── Create Post ────────────────────────────────────────────────────────────
   Future<PostModel> createPost({
-    required String type,
     required String content,
-    String? mediaUrl,
+    List<String> mediaUrls = const [],  // up to 10
     List<String> tags = const [],
   }) async {
     final userDoc = await _db.collection('users').doc(_uid).get();
-    final userData = userDoc.data()!;
-
+    final u = userDoc.data()!;
     final ref = _db.collection('posts').doc();
+
     final post = PostModel(
       id: ref.id,
       authorId: _uid,
-      authorUsername: userData['username'] ?? '',
-      authorHandle: userData['handle'] ?? '',
-      authorAvatarUrl: userData['avatarUrl'] ?? '',
-      type: type,
+      authorUsername: u['username'] ?? '',
+      authorHandle: u['handle'] ?? '',
+      authorAvatarUrl: u['avatarUrl'] ?? '',
+      type: mediaUrls.isNotEmpty ? 'media' : 'text',
       content: content,
-      mediaUrl: mediaUrl,
+      mediaUrls: mediaUrls.take(10).toList(), // enforce 10 max
       likesCount: 0,
       commentsCount: 0,
       tags: tags,
@@ -44,21 +44,17 @@ class PostService {
   }
 
   // ── Smart Feed Stream ──────────────────────────────────────────────────────
-  // Shows posts from followed users. Falls back to all posts if not following anyone.
   Stream<List<PostModel>> feedStream() {
     return _db
         .collection('users')
         .doc(_uid)
         .collection('following')
         .snapshots()
-        .asyncMap((followingSnap) async {
-      final followingIds = followingSnap.docs.map((d) => d.id).toList();
-
+        .asyncMap((followSnap) async {
+      final followingIds = followSnap.docs.map((d) => d.id).toList();
       List<PostModel> posts = [];
 
       if (followingIds.isNotEmpty) {
-        // ── Followed users feed ──────────────────────────────────────────
-        // Firestore whereIn supports max 30 items
         final chunks = _chunk(followingIds, 30);
         for (final chunk in chunks) {
           final snap = await _db
@@ -69,29 +65,29 @@ class PostService {
               .get();
           posts.addAll(snap.docs.map(PostModel.fromFirestore));
         }
-
-        // Sort merged results by date
         posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         posts = posts.take(30).toList();
-
-        // ── Suggested fallback — add a few posts from non-followed users ──
-        if (posts.length < 10) {
-          final suggested = await _getSuggestedPosts(excludeIds: followingIds);
-          posts.addAll(suggested);
-        }
-      } else {
-        // ── Not following anyone — show all posts (suggested) ────────────
-        posts = await _getSuggestedPosts(excludeIds: []);
       }
 
-      // Populate isLiked for each post
+      // Fallback / suggested
+      if (posts.length < 10) {
+        final suggested = await _db
+            .collection('posts')
+            .orderBy('createdAt', descending: true)
+            .limit(20)
+            .get();
+        final extra = suggested.docs
+            .map(PostModel.fromFirestore)
+            .where((p) => !posts.any((existing) => existing.id == p.id))
+            .toList();
+        posts.addAll(extra);
+      }
+
+      // Populate isLiked
       for (final post in posts) {
         final likeDoc = await _db
-            .collection('posts')
-            .doc(post.id)
-            .collection('likes')
-            .doc(_uid)
-            .get();
+            .collection('posts').doc(post.id)
+            .collection('likes').doc(_uid).get();
         post.isLiked = likeDoc.exists;
       }
 
@@ -99,34 +95,89 @@ class PostService {
     });
   }
 
-  // ── Suggested posts (global feed, exclude already-shown authors) ──────────
-  Future<List<PostModel>> _getSuggestedPosts({
-    required List<String> excludeIds,
-    int limit = 20,
-  }) async {
-    Query query = _db
-        .collection('posts')
-        .orderBy('createdAt', descending: true)
-        .limit(limit);
+  // ── Like / Unlike ──────────────────────────────────────────────────────────
+  Future<bool> toggleLike(String postId, bool currentlyLiked) async {
+    final postRef = _db.collection('posts').doc(postId);
+    final likeRef = postRef.collection('likes').doc(_uid);
+    final batch = _db.batch();
 
-    final snap = await query.get();
-    return snap.docs
-        .map(PostModel.fromFirestore)
-        .where((p) => !excludeIds.contains(p.authorId))
-        .toList();
+    if (currentlyLiked) {
+      batch.delete(likeRef);
+      batch.update(postRef, {'likesCount': FieldValue.increment(-1)});
+      await batch.commit();
+      return false;
+    } else {
+      batch.set(likeRef, {'likedAt': Timestamp.now()});
+      batch.update(postRef, {'likesCount': FieldValue.increment(1)});
+      await batch.commit();
+
+      // Send notification to post author
+      final postDoc = await postRef.get();
+      final postData = postDoc.data() as Map<String, dynamic>?;
+      if (postData != null) {
+        final authorId = postData['authorId'] as String? ?? '';
+        final content = postData['content'] as String? ?? '';
+        await NotificationService.instance.send(
+          toUserId: authorId,
+          type: 'like',
+          postId: postId,
+          postPreview: content.length > 50 ? '${content.substring(0, 50)}…' : content,
+        );
+      }
+      return true;
+    }
   }
 
-  // ── Get Posts by User ──────────────────────────────────────────────────────
-  Future<List<PostModel>> getPostsByUser(String userId) async {
-    final snap = await _db
-        .collection('posts')
-        .where('authorId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
-        .get();
-    return snap.docs.map(PostModel.fromFirestore).toList();
+  Future<bool> isLiked(String postId) async {
+    final doc = await _db.collection('posts').doc(postId)
+        .collection('likes').doc(_uid).get();
+    return doc.exists;
   }
 
-  // ── Get Posts by Tag (for driver profile fan posts) ────────────────────────
+  // ── Comments ───────────────────────────────────────────────────────────────
+  Future<void> addComment(String postId, String content) async {
+    final userDoc = await _db.collection('users').doc(_uid).get();
+    final u = userDoc.data()!;
+    final batch = _db.batch();
+    final commentRef = _db.collection('posts').doc(postId).collection('comments').doc();
+
+    batch.set(commentRef, CommentModel(
+      id: commentRef.id,
+      authorId: _uid,
+      authorUsername: u['username'] ?? '',
+      authorHandle: u['handle'] ?? '',
+      content: content,
+      createdAt: DateTime.now(),
+    ).toMap());
+
+    batch.update(_db.collection('posts').doc(postId),
+        {'commentsCount': FieldValue.increment(1)});
+    await batch.commit();
+
+    // Send notification
+    final postDoc = await _db.collection('posts').doc(postId).get();
+    final postData = postDoc.data() as Map<String, dynamic>?;
+    if (postData != null) {
+      final authorId = postData['authorId'] as String? ?? '';
+      final postContent = postData['content'] as String? ?? '';
+      await NotificationService.instance.send(
+        toUserId: authorId,
+        type: 'comment',
+        postId: postId,
+        postPreview: postContent.length > 50 ? '${postContent.substring(0, 50)}…' : postContent,
+      );
+    }
+  }
+
+  Stream<List<CommentModel>> commentsStream(String postId) {
+    return _db
+        .collection('posts').doc(postId).collection('comments')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map((s) => s.docs.map(CommentModel.fromFirestore).toList());
+  }
+
+  // ── Posts by tag (driver profile) ─────────────────────────────────────────
   Future<List<PostModel>> getPostsByTag(String tag) async {
     final snap = await _db
         .collection('posts')
@@ -137,74 +188,15 @@ class PostService {
     return snap.docs.map(PostModel.fromFirestore).toList();
   }
 
-  // ── Like Post ──────────────────────────────────────────────────────────────
-  Future<void> likePost(String postId) async {
-    final batch = _db.batch();
-    final likeRef = _db.collection('posts').doc(postId).collection('likes').doc(_uid);
-    batch.set(likeRef, {'likedAt': Timestamp.now()});
-    batch.update(_db.collection('posts').doc(postId), {'likesCount': FieldValue.increment(1)});
-    await batch.commit();
-  }
-
-  // ── Unlike Post ────────────────────────────────────────────────────────────
-  Future<void> unlikePost(String postId) async {
-    final batch = _db.batch();
-    final likeRef = _db.collection('posts').doc(postId).collection('likes').doc(_uid);
-    batch.delete(likeRef);
-    batch.update(_db.collection('posts').doc(postId), {'likesCount': FieldValue.increment(-1)});
-    await batch.commit();
-  }
-
-  // ── Toggle Like ────────────────────────────────────────────────────────────
-  Future<bool> toggleLike(String postId, bool currentlyLiked) async {
-    if (currentlyLiked) { await unlikePost(postId); return false; }
-    else { await likePost(postId); return true; }
-  }
-
-  // ── Check if Liked ─────────────────────────────────────────────────────────
-  Future<bool> isLiked(String postId) async {
-    final doc = await _db.collection('posts').doc(postId).collection('likes').doc(_uid).get();
-    return doc.exists;
-  }
-
-  // ── Delete Post ────────────────────────────────────────────────────────────
+  // ── Delete ─────────────────────────────────────────────────────────────────
   Future<void> deletePost(String postId) async {
     await _db.collection('posts').doc(postId).delete();
   }
 
-  // ── Add Comment ────────────────────────────────────────────────────────────
-  Future<void> addComment(String postId, String content) async {
-    final userDoc = await _db.collection('users').doc(_uid).get();
-    final userData = userDoc.data()!;
-    final batch = _db.batch();
-    final commentRef = _db.collection('posts').doc(postId).collection('comments').doc();
-    batch.set(commentRef, {
-      'authorId': _uid,
-      'authorHandle': userData['handle'] ?? '',
-      'authorAvatarUrl': userData['avatarUrl'] ?? '',
-      'content': content,
-      'createdAt': Timestamp.now(),
-    });
-    batch.update(_db.collection('posts').doc(postId), {'commentsCount': FieldValue.increment(1)});
-    await batch.commit();
-  }
-
-  // ── Get Comments Stream ────────────────────────────────────────────────────
-  Stream<List<CommentModel>> commentsStream(String postId) {
-    return _db
-        .collection('posts')
-        .doc(postId)
-        .collection('comments')
-        .orderBy('createdAt', descending: false)
-        .snapshots()
-        .map((snap) => snap.docs.map(CommentModel.fromFirestore).toList());
-  }
-
-  // ── Helper: chunk list for Firestore whereIn ───────────────────────────────
   List<List<T>> _chunk<T>(List<T> list, int size) {
     final chunks = <List<T>>[];
     for (var i = 0; i < list.length; i += size) {
-      chunks.add(list.sublist(i, i + size > list.length ? list.length : i + size));
+      chunks.add(list.sublist(i, (i + size).clamp(0, list.length)));
     }
     return chunks;
   }

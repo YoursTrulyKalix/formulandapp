@@ -1,3 +1,5 @@
+// lib/core/models/post_model.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class PostModel {
@@ -6,14 +8,14 @@ class PostModel {
   final String authorUsername;
   final String authorHandle;
   final String authorAvatarUrl;
-  final String type; // "photo" | "log" | "poll"
+  final String type;           // "text" | "media"
   final String content;
-  final String? mediaUrl;
+  final List<String> mediaUrls; // up to 10 photos/videos
   final int likesCount;
   final int commentsCount;
   final List<String> tags;
   final DateTime createdAt;
-  bool isLiked; // local state, not stored in Firestore
+  bool isLiked;
 
   PostModel({
     required this.id,
@@ -23,13 +25,17 @@ class PostModel {
     required this.authorAvatarUrl,
     required this.type,
     required this.content,
-    this.mediaUrl,
+    this.mediaUrls = const [],
     required this.likesCount,
     required this.commentsCount,
     required this.tags,
     required this.createdAt,
     this.isLiked = false,
   });
+
+  // Convenience — first media url for backward compat
+  String? get mediaUrl => mediaUrls.isNotEmpty ? mediaUrls.first : null;
+  bool get hasMedia => mediaUrls.isNotEmpty;
 
   factory PostModel.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
@@ -39,9 +45,9 @@ class PostModel {
       authorUsername: d['authorUsername'] ?? '',
       authorHandle: d['authorHandle'] ?? '',
       authorAvatarUrl: d['authorAvatarUrl'] ?? '',
-      type: d['type'] ?? 'log',
+      type: d['type'] ?? 'text',
       content: d['content'] ?? '',
-      mediaUrl: d['mediaUrl'],
+      mediaUrls: List<String>.from(d['mediaUrls'] ?? []),
       likesCount: d['likesCount'] ?? 0,
       commentsCount: d['commentsCount'] ?? 0,
       tags: List<String>.from(d['tags'] ?? []),
@@ -56,44 +62,28 @@ class PostModel {
         'authorAvatarUrl': authorAvatarUrl,
         'type': type,
         'content': content,
-        'mediaUrl': mediaUrl,
+        'mediaUrls': mediaUrls,
         'likesCount': likesCount,
         'commentsCount': commentsCount,
         'tags': tags,
         'createdAt': Timestamp.fromDate(createdAt),
       };
-
-  PostModel copyWith({int? likesCount, int? commentsCount, bool? isLiked}) =>
-      PostModel(
-        id: id,
-        authorId: authorId,
-        authorUsername: authorUsername,
-        authorHandle: authorHandle,
-        authorAvatarUrl: authorAvatarUrl,
-        type: type,
-        content: content,
-        mediaUrl: mediaUrl,
-        likesCount: likesCount ?? this.likesCount,
-        commentsCount: commentsCount ?? this.commentsCount,
-        tags: tags,
-        createdAt: createdAt,
-        isLiked: isLiked ?? this.isLiked,
-      );
 }
 
+// ── Comment Model ─────────────────────────────────────────────────────────────
 class CommentModel {
   final String id;
   final String authorId;
+  final String authorUsername;
   final String authorHandle;
-  final String authorAvatarUrl;
   final String content;
   final DateTime createdAt;
 
   const CommentModel({
     required this.id,
     required this.authorId,
+    required this.authorUsername,
     required this.authorHandle,
-    required this.authorAvatarUrl,
     required this.content,
     required this.createdAt,
   });
@@ -103,8 +93,8 @@ class CommentModel {
     return CommentModel(
       id: doc.id,
       authorId: d['authorId'] ?? '',
+      authorUsername: d['authorUsername'] ?? '',
       authorHandle: d['authorHandle'] ?? '',
-      authorAvatarUrl: d['authorAvatarUrl'] ?? '',
       content: d['content'] ?? '',
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -112,8 +102,8 @@ class CommentModel {
 
   Map<String, dynamic> toMap() => {
         'authorId': authorId,
+        'authorUsername': authorUsername,
         'authorHandle': authorHandle,
-        'authorAvatarUrl': authorAvatarUrl,
         'content': content,
         'createdAt': Timestamp.fromDate(createdAt),
       };
